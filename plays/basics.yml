@@ -1,0 +1,75 @@
+- hosts: 127.0.0.1
+  connection: local
+  become: true
+  tasks:
+    - name: "Update package cache"
+      ansible.builtin.apt:
+        name: "*"
+        update_cache: yes
+        state: latest
+    - name: "Ensure that basic unix stuff is installed"
+      ansible.builtin.apt:
+        pkg:
+          - git
+          - software-properties-common
+          - build-essential
+          - curl
+          - wget
+
+    - name: Create alias for config
+      lineinfile:
+        path: ~/.bashrc
+        line: "alias config='/usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'"
+        state: present
+
+    - name: Add .dotfiles to .gitignore
+      lineinfile:
+        path: /home/evan/.gitignore
+        line: ".dotfiles"
+        state: present
+
+    - name: Clone the dotfiles repository as a bare repository
+      git:
+        repo: "https://github.com/esize/dotfiles.git"
+        dest: "{{ ansible_env.HOME }}/.dotfiles"
+        bare: yes
+
+    - name: Attempt to checkout dotfiles
+      shell: |
+        /usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
+      register: checkout_result
+      ignore_errors: true
+
+    - name: Handle checkout errors by backing up conflicting files
+      when: checkout_result.failed
+      block:
+        - name: Create a backup directory for conflicting files
+          file:
+            path: ~/.config-backup
+            state: directory
+
+        - name: Move conflicting files to backup directory
+          shell: |
+            /usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout 2>&1 | \
+            egrep "\s+\." | awk '{print $1}' | \
+            xargs -I{} mv {} ~/.config-backup/{}/
+
+    - name: Re-attempt to checkout dotfiles
+      shell: |
+        /usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME checkout
+      when: checkout_result.failed
+
+    - name: Set git config to hide untracked files
+      shell: |
+        /usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME config --local status.showUntrackedFiles no
+
+    - name: Add neovim repository
+      ansible.builtin.apt_repository:
+        repo: 'ppa:neovim-ppa/stable'
+
+    - name: Install neovim
+      ansible.builtin.apt:
+        update_cache: yes
+        pkg:
+          - neovim
+
