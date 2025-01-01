@@ -1,0 +1,47 @@
+---
+- name: Install latest stable version of Neovim
+  hosts: 127.0.0.1
+  connection: local
+  become: yes
+  tasks:
+    - name: Ensure required dependencies are installed
+      apt:
+        name:
+          - git
+          - ninja-build
+          - gettext
+          - libtool
+          - libtool-bin
+          - autoconf
+          - automake
+          - cmake
+          - g++
+          - pkg-config
+          - unzip
+        state: present
+        update_cache: yes
+    
+    - name: Clone Neovim repository
+      git:
+        repo: "https://github.com/neovim/neovim.git"
+        dest: "/tmp/neovim"
+        version: stable
+
+    - name: Build and install Neovim
+      shell: |
+        make CMAKE_BUILD_TYPE=RelWithDebInfo
+        make install
+      args:
+        chdir: /tmp/neovim
+    
+    - name: Display Neovim version
+      command: nvim --version
+      register: nvim_version_output
+
+    - name: Extract and display Neovim version
+      set_fact:
+        neovim_version: "{{ nvim_version_output.stdout | regex_search('NVIM v\\S+') | replace('NVIM ', '') }}"
+
+    - name: Display extracted Neovim version
+      debug:
+        msg: "Installed Neovim version: {{ neovim_version }}"
